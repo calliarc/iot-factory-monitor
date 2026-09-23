@@ -7,7 +7,7 @@ x-restart: &restart
 
 services:
   mosquitto:
-    image: eclipse-mosquitto:2.0.20
+    image: eclipse-mosquitto:2.0.22
     <<: *restart
     entrypoint: ["/bin/sh", "/docker-entrypoint-factory.sh"]
     environment:
@@ -27,7 +27,7 @@ services:
       retries: 20
 
   timescaledb:
-    image: timescale/timescaledb:2.17.2-pg16
+    image: timescale/timescaledb:2.30.1-pg16
     <<: *restart
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?set in .env}
