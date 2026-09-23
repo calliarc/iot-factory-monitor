@@ -68,10 +68,11 @@ wait_for "grafana health" curl -fsS "$GRAFANA/api/health"
 curl -fsS -u "$AUTH" "$GRAFANA/api/datasources/uid/timescaledb/health" | grep -q '"status":"OK"' \
   || { echo "FAIL: datasource health"; exit 1; }
 echo "ok: grafana datasource healthy"
+# Dashboard provisioning finishes shortly after /api/health reports OK, so retry.
 for uid in factory-overview machine-detail; do
-  curl -fsS -u "$AUTH" "$GRAFANA/api/dashboards/uid/$uid" >/dev/null || { echo "FAIL: dashboard $uid"; exit 1; }
+  wait_for "dashboard $uid" curl -fsS -u "$AUTH" "$GRAFANA/api/dashboards/uid/$uid" \
+    || { echo "FAIL: dashboard $uid"; exit 1; }
 done
-echo "ok: dashboards provisioned"
 rules=$(curl -fsS -u "$AUTH" "$GRAFANA/api/v1/provisioning/alert-rules" | grep -o '"uid":"factory-' | wc -l)
 [ "$rules" -eq 6 ] || { echo "FAIL: expected 6 alert rules, got $rules"; exit 1; }
 echo "ok: $rules alert rules provisioned"

@@ -3,8 +3,9 @@ apiVersion: 1
 providers:
   - name: factory
     orgId: 1
+    # Same folder the alert rules use. No folderUid here: alerting provisioning runs first
+    # and creates "Factory"; a fixed folderUid would then conflict and skip the dashboards.
     folder: Factory
-    folderUid: factory
     type: file
     disableDeletion: true
     allowUiUpdates: false
