@@ -96,7 +96,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
   grafana:
-    image: grafana/grafana:11.3.1
+    image: grafana/grafana:13.2.2
     <<: *restart
     depends_on:
       timescaledb:
