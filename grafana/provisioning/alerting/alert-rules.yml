@@ -1,0 +1,221 @@
+# Grafana unified alerting - file provisioning (apiVersion 1).
+# Thresholds must match ingestor/ingestor/thresholds.py (enforced by
+# tests/test_grafana_provisioning.py). Alerts use the default notification
+# policy; add a contact point (email, Slack, Teams, webhook...) in
+# grafana/provisioning/alerting/ or via the UI to get notified.
+# Note: "$$" is the escape for a literal "$" in Grafana provisioning files
+# (otherwise $labels would be treated as an environment variable).
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: machine-thresholds
+    folder: Factory
+    interval: 1m
+    rules:
+      - uid: factory-temperature-warning
+        title: Machine temperature high (warning)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: timescaledb
+            model:
+              refId: A
+              format: table
+              rawQuery: true
+              editorMode: code
+              rawSql: |-
+                SELECT line, machine, avg(value) AS value
+                FROM sensor_readings
+                WHERE metric = 'temperature' AND time > now() - INTERVAL '5 minutes'
+                GROUP BY line, machine
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [75] }
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        labels: { severity: warning, metric: temperature }
+        annotations:
+          summary: "{{ $$labels.line }}/{{ $$labels.machine }} temperature above 75 C"
+          description: "5-minute average temperature is {{ humanize $$values.A.Value }} C (warning > 75 C)."
+
+      - uid: factory-temperature-critical
+        title: Machine temperature critical
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: timescaledb
+            model:
+              refId: A
+              format: table
+              rawQuery: true
+              editorMode: code
+              rawSql: |-
+                SELECT line, machine, avg(value) AS value
+                FROM sensor_readings
+                WHERE metric = 'temperature' AND time > now() - INTERVAL '5 minutes'
+                GROUP BY line, machine
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [85] }
+        noDataState: OK
+        execErrState: Error
+        for: 1m
+        labels: { severity: critical, metric: temperature }
+        annotations:
+          summary: "{{ $$labels.line }}/{{ $$labels.machine }} temperature above 85 C"
+          description: "5-minute average temperature is {{ humanize $$values.A.Value }} C (critical > 85 C)."
+
+      - uid: factory-vibration-warning
+        title: Machine vibration high (warning)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: timescaledb
+            model:
+              refId: A
+              format: table
+              rawQuery: true
+              editorMode: code
+              rawSql: |-
+                SELECT line, machine, avg(value) AS value
+                FROM sensor_readings
+                WHERE metric = 'vibration' AND time > now() - INTERVAL '5 minutes'
+                GROUP BY line, machine
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [4.5] }
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        labels: { severity: warning, metric: vibration }
+        annotations:
+          summary: "{{ $$labels.line }}/{{ $$labels.machine }} vibration above 4.5 mm/s"
+          description: "5-minute average vibration RMS is {{ humanize $$values.A.Value }} mm/s (ISO 10816 zone C, warning > 4.5 mm/s)."
+
+      - uid: factory-vibration-critical
+        title: Machine vibration critical
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: timescaledb
+            model:
+              refId: A
+              format: table
+              rawQuery: true
+              editorMode: code
+              rawSql: |-
+                SELECT line, machine, avg(value) AS value
+                FROM sensor_readings
+                WHERE metric = 'vibration' AND time > now() - INTERVAL '5 minutes'
+                GROUP BY line, machine
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [7.1] }
+        noDataState: OK
+        execErrState: Error
+        for: 1m
+        labels: { severity: critical, metric: vibration }
+        annotations:
+          summary: "{{ $$labels.line }}/{{ $$labels.machine }} vibration above 7.1 mm/s"
+          description: "5-minute average vibration RMS is {{ humanize $$values.A.Value }} mm/s (ISO 10816 zone D, critical > 7.1 mm/s)."
+
+  - orgId: 1
+    name: machine-availability
+    folder: Factory
+    interval: 1m
+    rules:
+      - uid: factory-machine-down
+        title: Machine down for more than 5 minutes
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 86400, to: 0 }
+            datasourceUid: timescaledb
+            model:
+              refId: A
+              format: table
+              rawQuery: true
+              editorMode: code
+              rawSql: |-
+                SELECT c.line, c.machine,
+                       CASE WHEN c.status = 'DOWN' THEN
+                            EXTRACT(EPOCH FROM now() - COALESCE(
+                                (SELECT max(ms.time) FROM machine_status ms
+                                 WHERE ms.line = c.line AND ms.machine = c.machine
+                                   AND ms.status <> 'DOWN' AND ms.time > now() - INTERVAL '1 day'),
+                                now() - INTERVAL '1 day')) / 60.0
+                       ELSE 0 END AS value
+                FROM machine_current_status c
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [5] }
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels: { severity: critical, metric: status }
+        annotations:
+          summary: "{{ $$labels.line }}/{{ $$labels.machine }} is DOWN"
+          description: "Machine has been DOWN for {{ humanize $$values.A.Value }} minutes."
+
+      - uid: factory-machine-offline
+        title: Machine not reporting
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 86400, to: 0 }
+            datasourceUid: timescaledb
+            model:
+              refId: A
+              format: table
+              rawQuery: true
+              editorMode: code
+              rawSql: |-
+                SELECT line, machine,
+                       COALESCE(EXTRACT(EPOCH FROM now() - last_seen) / 60.0, 1440) AS value
+                FROM machine_current_status
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [2] }
+        noDataState: OK
+        execErrState: Error
+        for: 1m
+        labels: { severity: warning, metric: heartbeat }
+        annotations:
+          summary: "{{ $$labels.line }}/{{ $$labels.machine }} stopped reporting"
+          description: "No telemetry for {{ humanize $$values.A.Value }} minutes (check the machine gateway, MQTT broker and ingestor)."

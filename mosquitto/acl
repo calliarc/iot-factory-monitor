@@ -1,0 +1,9 @@
+# Topic ACL. Usernames are fixed; passwords come from .env.
+
+# Ingestion service: read-only on factory telemetry.
+user ingestor
+topic read factory/#
+
+# Simulator (or real gateways, give each its own user): write-only.
+user simulator
+topic write factory/#

@@ -1,0 +1,21 @@
+apiVersion: 1
+
+datasources:
+  - name: TimescaleDB
+    uid: timescaledb
+    type: grafana-postgresql-datasource
+    access: proxy
+    url: ${FACTORY_DB_HOST}
+    user: ${FACTORY_DB_USER}
+    isDefault: true
+    editable: false
+    jsonData:
+      database: ${FACTORY_DB_NAME}
+      sslmode: disable        # traffic stays on the internal compose network; enable TLS for remote DBs
+      postgresVersion: 1600
+      timescaledb: true
+      maxOpenConns: 10
+      maxIdleConns: 5
+      connMaxLifetime: 14400
+    secureJsonData:
+      password: ${FACTORY_DB_PASSWORD}

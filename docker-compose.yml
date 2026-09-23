@@ -1,0 +1,132 @@
+name: iot-factory-monitor
+
+# All host ports bind to 127.0.0.1. Values come from .env (see .env.example).
+
+x-restart: &restart
+  restart: unless-stopped
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0.20
+    <<: *restart
+    entrypoint: ["/bin/sh", "/docker-entrypoint-factory.sh"]
+    environment:
+      MQTT_INGESTOR_PASSWORD: ${MQTT_INGESTOR_PASSWORD:?set in .env}
+      MQTT_SIMULATOR_PASSWORD: ${MQTT_SIMULATOR_PASSWORD:?set in .env}
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/acl:/mosquitto/config/acl:ro
+      - ./mosquitto/docker-entrypoint.sh:/docker-entrypoint-factory.sh:ro
+      - mosquitto-data:/mosquitto/data
+    ports:
+      - "127.0.0.1:${MQTT_PORT:-1883}:1883"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 1883"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  timescaledb:
+    image: timescale/timescaledb:2.17.2-pg16
+    <<: *restart
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set in .env}
+      GRAFANA_DB_USER: ${GRAFANA_DB_USER:-grafana_reader}
+      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:?set in .env}
+      TIMESCALEDB_TELEMETRY: "off"
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./db/02-grafana-reader.sh:/docker-entrypoint-initdb.d/02-grafana-reader.sh:ro
+      - timescaledb-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  ingestor:
+    build: ./ingestor
+    image: iot-factory-monitor/ingestor:0.1.0
+    <<: *restart
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+      MQTT_USERNAME: ingestor
+      MQTT_PASSWORD: ${MQTT_INGESTOR_PASSWORD:?set in .env}
+      POSTGRES_HOST: timescaledb
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      BATCH_SIZE: ${BATCH_SIZE:-500}
+      FLUSH_INTERVAL_S: ${FLUSH_INTERVAL_S:-1.0}
+      MAX_BUFFER: ${MAX_BUFFER:-100000}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      HEALTH_PORT: "8080"
+    ports:
+      - "127.0.0.1:${INGESTOR_HEALTH_PORT:-8080}:8080"
+
+  simulator:
+    build: ./simulator
+    image: iot-factory-monitor/simulator:0.1.0
+    <<: *restart
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+      MQTT_USERNAME: simulator
+      MQTT_PASSWORD: ${MQTT_SIMULATOR_PASSWORD:?set in .env}
+      SIM_LINES: ${SIM_LINES:-2}
+      SIM_MACHINES_PER_LINE: ${SIM_MACHINES_PER_LINE:-3}
+      PUBLISH_INTERVAL_S: ${PUBLISH_INTERVAL_S:-1.0}
+      SIM_FAULT_RATE: ${SIM_FAULT_RATE:-1.0}
+      IDEAL_CYCLE_TIME_S: ${IDEAL_CYCLE_TIME_S:-2.0}
+      SIM_SEED: ${SIM_SEED:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    <<: *restart
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set in .env}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/factory-overview.json
+      # Consumed by provisioning/datasources/timescaledb.yml
+      FACTORY_DB_HOST: timescaledb:5432
+      FACTORY_DB_NAME: ${POSTGRES_DB}
+      FACTORY_DB_USER: ${GRAFANA_DB_USER:-grafana_reader}
+      FACTORY_DB_PASSWORD: ${GRAFANA_DB_PASSWORD}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  mosquitto-data:
+  timescaledb-data:
+  grafana-data:
