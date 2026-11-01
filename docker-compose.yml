@@ -27,7 +27,7 @@ services:
       retries: 20
 
   timescaledb:
-    image: timescale/timescaledb:2.30.1-pg16
+    image: timescale/timescaledb:2.31.0-pg16
     <<: *restart
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?set in .env}
@@ -96,7 +96,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
   grafana:
-    image: grafana/grafana:13.2.2
+    image: grafana/grafana:13.3.0
     <<: *restart
     depends_on:
       timescaledb:
